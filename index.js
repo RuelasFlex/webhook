@@ -3,19 +3,39 @@ import bodyParser from 'body-parser';
 import nodemailer from 'nodemailer';
 import XlsxPopulate from 'xlsx-populate';
 import { faker } from '@faker-js/faker';
+import db from './db/db.js';
 
 //Servidor
 const app = express();
 const port = 3007;
+const database = new db();
 
 app.use(bodyParser.json());
 
 /* app.post('/webhook', async (req, res) => {
     try {
-        const orderData = req.body;
+        let orderData = req.body;
 
-        // Aqui guardar la orden en la base de datos
-        //await saveOrder(orderData);
+        // Si no hay datos en el body, generar datos aleatorios para pruebas
+        if (!orderData || Object.keys(orderData).length === 0) {
+            orderData = generateMultipleRandomOrders(5); // Genera 5 órdenes aleatorias
+            console.log('Generando datos aleatorios para prueba...');
+        }
+        
+        // Validar la fecha
+        const orderDate = orderData.orderDate ? new Date(orderData.orderDate) : new Date();
+
+        if (isNaN(orderDate.getTime())) {
+            throw new Error('Fecha de orden no válida');
+        }
+
+
+        // Aqui guardar la orden en la base de datos (simulado)
+        await database.insertOrder({
+            description: JSON.stringify(orderData),
+            amount: parseFloat(orderData.orderAmount),
+            date: isNaN(orderDate.getTime()) ? new Date().toISOString() : orderDate.toISOString()
+        });
 
         // Aqui generar el excel
         let excelFile;
@@ -34,7 +54,6 @@ app.use(bodyParser.json());
         res.status(500).send('Error procesando la orden');
     }
 }); */
-
 app.post('/webhook', async (req, res) => {
     try {
         let orderData = req.body;
@@ -45,19 +64,15 @@ app.post('/webhook', async (req, res) => {
             console.log('Generando datos aleatorios para prueba...');
         }
 
-        // Aqui guardar la orden en la base de datos (simulado)
-        //Sawait saveOrder(orderData);
-
-        // Aqui generar el excel
-        let excelFile;
+        // Si se envían varias órdenes
         if (Array.isArray(orderData)) {
-            excelFile = await generateExcelForMultipleOrders(orderData);
+            for (let order of orderData) {
+                await saveOrderAndGenerateExcel(order);
+            }
         } else {
-            excelFile = await generateExcelForSingleOrder(orderData);
+            // Si se envía una sola orden
+            await saveOrderAndGenerateExcel(orderData);
         }
-
-        // Aqui enviar el excel
-        await sendEmail(excelFile);
 
         res.status(200).send('Orden recibida y procesada');
     } catch (error) {
@@ -66,27 +81,43 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-app.get('/generate-test-orders', async (req, res) => {
-    try {
-        const orderData = generateMultipleRandomOrders(5); // Genera 5 órdenes aleatorias
-
-        // Genera el Excel
-        const excelFile = await generateExcelForMultipleOrders(orderData);
-
-        // Envía el Excel
-        await sendEmail(excelFile);
-
-        res.status(200).send('Órdenes de prueba generadas y procesadas');
-    } catch (error) {
-        console.error('Error procesando la orden de prueba:', error);
-        res.status(500).send('Error procesando la orden de prueba');
-    }
-});
-
-
 app.listen(port, () => {
     console.log(`Server listening on port ${port}`);
 });
+
+// Guardar la orden y generar Excel
+async function saveOrderAndGenerateExcel(order) {
+    try {
+        // Validar y preparar datos para la base de datos
+        const orderAmount = parseFloat(order.orderAmount);
+        if (isNaN(orderAmount)) {
+            throw new Error('Monto de la orden no válido');
+        }
+
+        const orderDate = order.orderDate ? new Date(order.orderDate) : new Date();
+        if (isNaN(orderDate.getTime())) {
+            throw new Error('Fecha de orden no válida');
+        }
+
+        // Guardar en la base de datos
+        await database.insertOrder({
+            description: JSON.stringify(order),
+            amount: orderAmount,
+            date: orderDate.toISOString()
+        });
+
+        // Generar Excel
+        const excelFile = Array.isArray(order) 
+            ? await generateExcelForMultipleOrders(order)
+            : await generateExcelForSingleOrder(order);
+
+        // Enviar el Excel por correo
+        await sendEmail(excelFile);
+    } catch (error) {
+        console.error('Error en saveOrderAndGenerateExcel:', error.message);
+        throw error;
+    }
+}
 
 //Configurar el envio del correo
 async function sendEmail(excelFile) {
@@ -144,6 +175,7 @@ async function generateExcelForSingleOrder(orderData) {
     return filePath;
 }
 
+//NO ENTRA A ESTA FUNCION CUANDO ES MAS DE 1 ORDEN
 async function generateExcelForMultipleOrders(orders) {
     const workbook = await XlsxPopulate.fromBlankAsync();
     const sheet = workbook.sheet(0);

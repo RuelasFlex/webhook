@@ -1,6 +1,10 @@
-// database.js
 import sqlite3 from 'sqlite3';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Estas líneas son necesarias para obtener __dirname en ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 class Database {
     constructor() {
@@ -37,6 +41,14 @@ class Database {
     insertOrder(order) {
         const insertSQL = `INSERT INTO orders (description, amount, date) VALUES (?, ?, ?)`;
         return new Promise((resolve, reject) => {
+            // Validar que los campos no sean nulos o indefinidos
+            if (!order.description || order.amount == null || !order.date) {
+                const errorMsg = `Falta información para insertar la orden: 
+                description=${order.description}, amount=${order.amount}, date=${order.date}`;
+                console.error(errorMsg);
+                return reject(new Error(errorMsg));
+            }
+
             this.db.run(insertSQL, [order.description, order.amount, order.date], function (err) {
                 if (err) {
                     console.error('Error al insertar la orden:', err.message);
@@ -63,17 +75,9 @@ class Database {
         });
     }
 
-    
+    async saveOrder(orderData) {
+        return this.insertOrder(orderData);
+    }
 }
 
-// Función para guardar la orden en la base de datos
-async function saveOrder(orderData) {
-    const db = await connectDB();
-
-    // Insertar la orden en la tabla
-    await db.run('INSERT INTO orders (orderData) VALUES (?)', JSON.stringify(orderData));
-
-    // Cerrar la conexión a la base de datos
-    await db.close();
-}
-module.exports = Database;
+export default Database;
