@@ -78,6 +78,21 @@ class Database {
     async saveOrder(orderData) {
         return this.insertOrder(orderData);
     }
+
+    clearOrders() {
+        const deleteSQL = `DELETE FROM orders`;
+        return new Promise((resolve, reject) => {
+            this.db.run(deleteSQL, function (err) {
+                if (err) {
+                    console.error('Error al borrar las órdenes:', err.message);
+                    reject(err);
+                } else {
+                    console.log('Ordenes eliminadas despues de enviar');
+                    resolve();
+                }
+            });
+        });
+    }
 }
 
 export default Database;

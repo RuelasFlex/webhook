@@ -4,6 +4,7 @@ import nodemailer from 'nodemailer';
 import XlsxPopulate from 'xlsx-populate';
 import { faker } from '@faker-js/faker';
 import db from './db/db.js';
+import cron from 'node-cron';
 
 //Servidor
 const app = express();
@@ -108,7 +109,11 @@ async function generateExcelForMultipleOrders(orders) {
     const sheet = workbook.sheet(0);
 
     if (orders.length > 0) {
-        const headers = Object.keys(orders[0]);
+        // Convertir cada JSON en un objeto para desglosar sus propiedades
+        const parsedOrders = orders.map(order => JSON.parse(order.description));
+
+        // Extraer los headers desde el primer objeto
+        const headers = Object.keys(parsedOrders[0]);
 
         // Agregar encabezados
         headers.forEach((header, index) => {
@@ -116,12 +121,14 @@ async function generateExcelForMultipleOrders(orders) {
         });
 
         // Agregar cada orden como una fila
-        orders.forEach((order, rowIndex) => {
+        parsedOrders.forEach((order, rowIndex) => {
             headers.forEach((header, colIndex) => {
                 sheet.cell(rowIndex + 2, colIndex + 1).value(order[header]);
             });
         });
-        adjustColumnWidths(sheet, headers, orders);
+
+        // Ajustar el ancho de las columnas
+        adjustColumnWidths(sheet, headers, parsedOrders);
     }
 
     const filePath = `./orders.xlsx`;
@@ -172,3 +179,27 @@ function adjustColumnWidths(sheet, headers, data) {
     });
 }
 
+// Programa la tarea para que se ejecute a las 10:00 AM todos los días
+cron.schedule('25 14 * * *', async () => {
+    try {
+        console.log('Ejecutando tarea programada a las 10:00 AM todos los días');
+
+        //recuperar las ordenes de la base de datos
+        const allOrders = await database.getAllOrders();
+
+        if(allOrders.length > 0) {
+            //generar un archivo excel con las ordenes
+            const excelFile = await generateExcelForMultipleOrders(allOrders);
+
+            //enviar el archivo excel por correo
+            await sendEmail(excelFile);
+
+            //borrar las ordenes de la base de datos del dia anterior (?
+            //await database.clearOrders();
+        } else {
+            console.log('No hay ordenes para enviar');
+        }
+    } catch (error) {
+        console.error('Error en cron:', error.message);
+    }
+});
